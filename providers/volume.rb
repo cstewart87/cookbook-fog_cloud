@@ -1,5 +1,5 @@
 #
-# Cookbook Name:: aws
+# Cookbook Name:: fog_cloud
 # Attributes:: default
 #
 # Copyright 2014, Florin STAN

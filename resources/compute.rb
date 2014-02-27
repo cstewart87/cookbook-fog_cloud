@@ -1,8 +1,8 @@
 #
 # Cookbook Name:: fog_cloud
-# Attributes:: default
+# Resource:: compute
 #
-# Copyright 2014, Florin STAN
+# Copyright 2014, AT&T Services, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,5 +17,16 @@
 # limitations under the License.
 #
 
-chef_gem 'fog'
-require 'fog'
+actions :create, :destroy
+
+default_action :create
+
+attribute :connection,      :kind_of => Hash,   :required => true
+attribute :cloud,           :kind_of => String, :default => 'openstack'
+attribute :keypair,         :kind_of => String
+attribute :image,           :kind_of => String
+attribute :flavor,          :kind_of => String
+attribute :security_groups, :kind_of => Array,  :default => %w{ default }
+attribute :ip_addresses,    :kind_of => Array,  :default => []
+
+attr_accessor :exists

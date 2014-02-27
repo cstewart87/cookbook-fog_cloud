@@ -1,27 +1,13 @@
 ---
 driver:
-  name: openstack
+  name: vagrant
   require_chef_omnibus: true
-  openstack_username: <%= ENV['OS_USERNAME'] %>
-  openstack_api_key:  <%= ENV['OS_PASSWORD'] %>
-  openstack_auth_url:  <%= ENV['OS_AUTH_URL'] %>
-  openstack_key_name: <%= ENV['OS_KEY_NAME'] %>
-  openstack_tenant: <%= ENV['OS_TENANT_NAME'] %>
-  openstack_network_name: net-shared-vlan-19
-  key_name: <%= ENV['OS_KEY_NAME'] %>  
-  public_key_path: <%= ENV['OS_KEY_FILE'] %>    
-  ssh_key: <%= ENV['OS_KEY_FILE'] %>
-
 
 provisioner:
   name: chef_solo
 
 platforms:
 - name: ubuntu-12.04
-  driver_config:
-    username: ubuntu
-    image_ref: 7b1007d6-2ab9-4f50-a43f-9b01bd585617
-    flavor_ref: 39ec8fb8-229d-46a2-9c1b-b6a53b99c6e0
 
 suites:
   - name: default
@@ -32,13 +18,7 @@ suites:
     attributes:
       openstack_username: <%= ENV['OS_USERNAME'] %>
       openstack_api_key:  <%= ENV['OS_PASSWORD'] %>
-      openstack_auth_url:  <%= ENV['OS_AUTH_URL'] %>
-      openstack_key_name: <%= ENV['OS_KEY_NAME'] %>
+      openstack_auth_url:  <%= ENV['OS_AUTH_URL'] %>/tokens
       openstack_tenant: <%= ENV['OS_TENANT_NAME'] %>
       build_essential:
-        compiletime: 1
-        # cloud:
-      #   platform: openstack
-      # fog_auth_databag_name: test_databag 
-
-
+        compiletime: true

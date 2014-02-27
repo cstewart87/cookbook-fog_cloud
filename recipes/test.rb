@@ -1,8 +1,8 @@
 #
-# Cookbook Name:: aws
-# Attributes:: default
+# Cookbook Name:: fog_cloud
+# Recipe:: test
 #
-# Copyright 2014, Florin STAN 
+# Copyright 2014, AT&T Services, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,26 +17,26 @@
 # limitations under the License.
 #
 
-
-fog_cloud_volume 'test' do
+fog_cloud_compute 'chef_test' do
   action :create
-  size 20
-  connection({
-               :provider => 'OpenStack',
-               :openstack_auth_url => node[:openstack_auth_url],
-               :openstack_username => node[:openstack_username],
-               :openstack_api_key => node[:openstack_api_key],
-               :openstack_tenant => node[:openstack_tenant]
-  })
+  image '72df9ffd-0a4e-46c7-9280-6f87ab302b98'
+  flavor 'm1.small.ssd'
+  security_groups %w{ default PingAndSSHDev }
+  keypair 'cstewart'
+  connection(
+    :openstack_auth_url => node[:openstack_auth_url],
+    :openstack_username => node[:openstack_username],
+    :openstack_api_key => node[:openstack_api_key],
+    :openstack_tenant => node[:openstack_tenant]
+  )
 end
 
-fog_cloud_volume 'test' do
+fog_cloud_compute 'chef_test' do
   action :destroy
-  connection({
-               :provider => 'OpenStack',
-               :openstack_auth_url => node[:openstack_auth_url],
-               :openstack_username => node[:openstack_username],
-               :openstack_api_key => node[:openstack_api_key],
-               :openstack_tenant => node[:openstack_tenant]
-  })
+  connection(
+    :openstack_auth_url => node[:openstack_auth_url],
+    :openstack_username => node[:openstack_username],
+    :openstack_api_key => node[:openstack_api_key],
+    :openstack_tenant => node[:openstack_tenant]
+  )
 end
