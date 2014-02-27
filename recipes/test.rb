@@ -17,7 +17,7 @@
 # limitations under the License.
 #
 
-fog_cloud_compute 'chef_test' do
+cloud_server 'chef_test' do
   action :create
   image '72df9ffd-0a4e-46c7-9280-6f87ab302b98'
   flavor 'm1.small.ssd'

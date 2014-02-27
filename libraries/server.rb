@@ -1,0 +1,340 @@
+#
+# Cookbook Name:: fog_cloud
+# HWRP:: cloud_server
+#
+# Copyright:: Copyright (c) 2014 AT&T Inc.
+# License:: Apache License, Version 2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+class Chef
+  class Resource::CloudServer < Resource
+    identity_attr :name
+
+    attr_writer :exists, :running
+
+    def initialize(name, run_contect = nil)
+      super
+
+      # Set the resource name and provider
+      @resource_name = :cloud_server
+      @provider = Provider::CloudServer
+
+      # Set default actions and allowed actions
+      @action = :create
+      @allowed_actions.push(:create, :destroy)
+
+      # Set the name attribute and default attributes
+      @name = name
+      @cloud = 'openstack'
+      @security_groups = %w{ default }
+      @ip_addresses = []
+
+      # State attributes that are set by the provider
+      @exists = false
+      @running = false
+    end
+
+    #
+    # The name of the server
+    #
+    # @param [String] arg
+    # @return [String]
+    #
+    def name(arg = nil)
+      set_or_return(:name, arg, kind_of: String)
+    end
+
+    #
+    # The connection data
+    #
+    # @param [Hash] arg
+    # @return [Hash] arg
+    #
+    def connection(arg = nil)
+      set_or_return(:connection, arg, kind_of: Hash)
+    end
+
+    #
+    # The name of the keypair to launch with
+    #
+    # @param [String] arg
+    # @return [String]
+    #
+    def keypair(arg = nil)
+      set_or_return(:keypair, arg, kind_of: String)
+    end
+
+    #
+    # The id of the image to launch
+    # 
+    # @param [String] arg
+    # @return [String] arg
+    #
+    def image(arg = nil)
+      set_or_return(:image, arg, kind_of: String)
+    end
+
+    #
+    # The flavor of the server
+    #
+    # @param [String] arg
+    # @return [String]
+    #
+    def flavor(arg = nil)
+      set_or_return(:flavor, arg, kind_of: String)
+    end
+
+    #
+    # The security groups to launch with
+    #
+    # @param [Array] arg
+    # @return [Array] arg
+    #
+    def security_groups(arg = nil)
+      set_or_return(:security_groups, arg, kind_of: Array)
+    end
+
+    #
+    # The ip addresses to associate
+    #
+    # @param [Array] arg
+    # @return [Array] arg
+    #
+    def ip_addresses(arg = nil)
+      set_or_return(:ip_addresses, arg, kind_of: Array)
+    end
+
+    #
+    # The cloud provider
+    #
+    # @param [String] arg
+    # @return [String] arg
+    #
+    def cloud(arg = nil)
+      set_or_return(:cloud, arg, kind_of: String)
+    end
+
+    #
+    # Determine if the instance already exists.  This value is set by the
+    # provider when the current resource is loaded
+    #
+    # @return [Boolean]
+    #
+    def exists?
+      !!@exists
+    end
+
+    #
+    # Determine if the instance running.  This value is set by the
+    # provider when the current resource is loaded
+    #
+    # @return [Boolean]
+    #
+    def running?
+      !!@running
+    end
+  end
+end
+
+class Chef
+  class Provider::CloudServer < Provider
+    def load_current_resource
+      Chef::Log.debug("Loading current resource #{new_resource}")
+
+      @current_resource = Resource::CloudServer.new(new_resource.name)
+      @current_resource.name(new_resource.name)
+      @current_resource.image(new_resource.image)
+      @current_resource.flavor(new_resource.flavor)
+      @current_resource.security_groups(new_resource.security_groups)
+      @current_resource.ip_addresses(new_resource.ip_addresses)
+
+      if current_instance
+        @current_resource.exists = true
+        @current_resource.running = current_instance.ready?
+      else
+        @current_resource.exists = false
+        @current_resource.running = false
+      end
+    end
+
+    #
+    # This provider supports why-run mode.
+    #
+    def whyrun_supported?
+      true
+    end
+
+    def action_create
+      validate_image!
+      validate_flavor!
+      validate_keypair!
+      validate_security_groups!
+      validate_addresses!
+
+      if current_resource.exists?
+        Chef::Log.debug("#{new_resource} exists - skipping")
+      else
+        converge_by("Create #{new_resource}") do
+          server = compute.servers.new(:image_ref => new_resource.image,
+                                       :flavor_ref => flavor_ref(new_resource.flavor),
+                                       :security_groups => new_resource.security_groups,
+                                       :key_name => new_resource.keypair,
+                                       :name => new_resource.name)
+          server.save
+          server.wait_for { ready? }
+        end
+      end
+
+      if correct_params?
+        Chef::Log.debug("#{new_resource} parameters up to date - skipping")
+      else
+        converge_by("Update #{new_resource} parameters") do
+          # TODO: update
+        end
+      end
+    end
+
+    private
+
+    def compute
+      begin
+        require 'fog'
+      rescue LoadError
+        Chef::Log.error("Missing gem 'fog'. Use the default fog_cloud recipe to install it first.")
+      end
+
+      if new_resource.connection
+        # Fog::Logger = Chef::Log unless Fog::Logger == Chef::Log
+        @fog ||= Fog::Compute.new(new_resource.connection.merge(:provider => new_resource.cloud))
+      else
+        Chef::Log.error("Missing connection attribute on #{new_resource.name}")
+      end
+    end
+
+    # The current instance.
+    #
+    # @return [nil, Fog::Compute::Server]
+    #  nil if the instance does not exist, or a Fog::Compute::Server model if it does
+    def current_instance
+      return @current_instance if @current_instance
+
+      Chef::Log.debug "Load #{new_resource} instance information"
+
+      @current_instance = compute.servers.select { |s| s.name == new_resource.name }.first
+      @current_instance
+    end
+
+    #
+    # Helper method for determining if the given parameters are in sync with the
+    # current params for the cloud server.
+    #
+    # @return [Boolean]
+    #
+    def correct_params?
+      true
+    end
+
+    def flavor_ref(name)
+      ref = compute.flavors.select { |f| f.name == name }.first
+      ref.id
+    end
+
+    #
+    # Validate that an image was given as a parameter to the
+    # resource. This method also validates the given image exists
+    # on the target cloud.
+    #
+    def validate_image!
+      Chef::Log.debug "Validate #{new_resource} image"
+
+      if new_resource.image.nil?
+        fail("#{new_resource} must specify an image!")
+      elsif compute.images.get(new_resource.image).nil?
+        fail("#{new_resource} image `#{new_resource.image}` does not exist!")
+      end
+    end
+
+    #
+    # Validate that a flavor was given as a parameter to the
+    # resource. This method also validates the given flavor exists
+    # on the target cloud.
+    #
+    def validate_flavor!
+      Chef::Log.debug "Validate #{new_resource} instance type"
+
+      if new_resource.flavor.nil?
+        fail("#{new_resource} must specify a flavor!")
+      elsif compute.flavors.select { |f| f.name == new_resource.flavor }.empty?
+        fail("#{new_resource} flavor `#{new_resource.flavor}` does not exist!")
+      end
+    end
+
+    #
+    # Validate that a keypair was given as a parameter to the
+    # resource. This method also validates the given keypair exists
+    # on the target cloud.
+    #
+    def validate_keypair!
+      Chef::Log.debug "Validate #{new_resource} keypair"
+
+      if new_resource.keypair.nil?
+        fail("#{new_resource} must specify a keypair!")
+      else
+        keys_response = compute.list_key_pairs.body['keypairs']
+        key = keys_response.select { |k| k['keypair']['name'] == new_resource.keypair }.first
+        fail("#{new_resource} keypair `#{new_resource.keypair}` does not exist!") if key.nil?
+      end
+    end
+
+    #
+    # Validate that a security group was given as a parameter to the
+    # resource. This method also validates the given security group(s)
+    # exist on the target cloud.
+    #
+    def validate_security_groups!
+      Chef::Log.debug "Validate #{new_resource} security groups"
+
+      if new_resource.security_groups.nil?
+        fail("#{new_resource} must specify a security group!")
+      else
+        new_resource.security_groups.each do |group|
+          obj = compute.security_groups.select { |g| g.name == group }.first
+          fail("#{new_resource} security group `#{group}` does not exist!") if obj.nil?
+        end
+      end
+    end
+
+    #
+    # Validate that any give IP addresses given as a parameter to the
+    # resource exists on the target cloud and are not currently in use.
+    #
+    def validate_addresses!
+      Chef::Log.debug "Validate #{new_resource} IP addresses"
+
+      if new_resource.ip_addresses.nil?
+        Chef::Log.debug("#{new_resource} will not have a public IP.")
+      else
+        new_resource.ip_addresses.each do |address|
+          ip = compute.addresses.select { |addr| arrd.ip == address }.first
+          if ip.nil?
+            fail("#{new_resource} IP address `#{address}` does not exist!")
+          elsif ip.instance_id
+            fail("#{new_resource} IP address `#{address}` is currently in use!")
+          end
+        end
+      end
+    end
+  end
+end
