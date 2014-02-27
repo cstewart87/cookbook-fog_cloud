@@ -1,5 +1,5 @@
 #
-# Cookbook Name:: fog_cloud
+# Cookbook Name:: cloud
 # HWRP:: cloud_server
 #
 # Copyright:: Copyright (c) 2014 AT&T Inc.
@@ -150,6 +150,10 @@ end
 
 class Chef
   class Provider::CloudServer < Provider
+    require_relative '_helper'
+
+    include Cloud::Helper
+
     def load_current_resource
       Chef::Log.debug("Loading current resource #{new_resource}")
 
