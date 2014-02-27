@@ -31,7 +31,7 @@ cloud_server 'chef_test' do
   )
 end
 
-fog_cloud_compute 'chef_test' do
+cloud_server 'chef_test' do
   action :destroy
   connection(
     :openstack_auth_url => node[:openstack_auth_url],

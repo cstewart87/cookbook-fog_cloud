@@ -176,6 +176,21 @@ class Chef
       true
     end
 
+    #
+    # Idempotently create a new cloud server with the current resource's name
+    # and parameters. If the server already exists, no action will be
+    # taken. If the server does not exist, one will be created from the given
+    # parameters using the Fog API.
+    #
+    # Requirements:
+    #   - `image` parameter
+    #   - `flavor` parameter
+    #   - `keypair` parameter
+    #   - `security_groups` parameter
+    #
+    # Optional:
+    #   - `addresses` parameter
+    #
     def action_create
       validate_image!
       validate_flavor!
@@ -203,6 +218,21 @@ class Chef
         converge_by("Update #{new_resource} parameters") do
           # TODO: update
         end
+      end
+    end
+
+    #
+    # Idempotently delete a cloud server with the current resource's name. If
+    # the server does not exist, no action will be taken. If the server does exist,
+    # it will be deleted using the Fog API.
+    #
+    def action_destroy
+      if current_resource.exists?
+        converge_by("Delete #{new_resource}") do
+          current_instance.destroy
+        end
+      else
+        Chef::Log.debug("#{new_resource} does not exist - skipping")
       end
     end
 
