@@ -1,6 +1,6 @@
 #
 # Cookbook Name:: cloud
-# Recipe:: default
+# Recipes:: setup_knife
 #
 # Copyright 2014, AT&T Services, Inc.
 #
@@ -17,8 +17,11 @@
 # limitations under the License.
 #
 
-chef_gem 'fog'
-chef_gem 'ridley-connectors'
+directory '/etc/chef' do
+  recursive true
+  action :create
+end
 
-require 'fog'
-require 'ridley-connectors'
+template '/etc/chef/knife.rb' do
+  action :create
+end

@@ -4,7 +4,8 @@ driver:
   require_chef_omnibus: true
 
 provisioner:
-  name: chef_solo
+  name: chef_zero
+  encrypted_data_bag_secret_key_path: /Users/curtstewart/.ssh/id_rsa
 
 platforms:
 - name: ubuntu-12.04

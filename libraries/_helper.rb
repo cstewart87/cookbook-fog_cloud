@@ -19,12 +19,28 @@
 #
 
 module Cloud
+  # Helper methods for HWRPs
   module Helper
     #
     # Helper method to convert Fog models to hashes
     #
     def convert_to_hash(data)
       ::JSON.parse(data.to_json)
+    end
+
+    #
+    # Helper method to pull bootstrap configs
+    #
+    def bootstrap_config(key)
+      key = key.to_sym
+      Chef::Config[:knife][key]
+    end
+
+    #
+    # Helper method to symbolize hash keys
+    #
+    def symbolize_hash(hash)
+      Hash[hash.map { |(k, v)| [k.to_sym, v] }]
     end
   end
 end

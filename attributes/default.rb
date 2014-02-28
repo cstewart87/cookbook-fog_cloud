@@ -1,6 +1,6 @@
 #
 # Cookbook Name:: cloud
-# Recipe:: default
+# Attributes:: default
 #
 # Copyright 2014, AT&T Services, Inc.
 #
@@ -17,8 +17,14 @@
 # limitations under the License.
 #
 
-chef_gem 'fog'
-chef_gem 'ridley-connectors'
-
-require 'fog'
-require 'ridley-connectors'
+default['cloud']['bootstrap'].tap do |bootstrap|
+  bootstrap['client_name']       = Chef::Config[:node_name]
+  bootstrap['client_key']        = Chef::Config[:encrypted_data_bag_secret]
+  bootstrap['validator_path']    = Chef::Config[:validation_key]
+  bootstrap['validator_client']  = Chef::Config[:validation_client_name]
+  bootstrap['bootstrap_proxy']   = nil
+  bootstrap['template']          = nil
+  bootstrap['ssh']['keys']       = nil
+  bootstrap['ssh']['user']       = nil
+  bootstrap['chef_version']      = nil
+end

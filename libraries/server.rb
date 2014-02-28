@@ -33,13 +33,15 @@ class Chef
 
       # Set default actions and allowed actions
       @action = :create
-      @allowed_actions.push(:create, :destroy)
+      @allowed_actions.push(:create, :destroy, :bootstrap)
 
       # Set the name attribute and default attributes
       @name = name
       @cloud = 'openstack'
       @security_groups = %w{ default }
       @ip_addresses = []
+      @run_list = []
+      @fail_on_bootstrap = false
 
       # State attributes that are set by the provider
       @exists = false
@@ -127,6 +129,26 @@ class Chef
     end
 
     #
+    # The nodes run list
+    #
+    # @param [Array] arg
+    # @return [Array] arg
+    #
+    def run_list(arg = nil)
+      set_or_return(:run_list, arg, kind_of: Array)
+    end
+
+    #
+    # Determines if run fails on any bootstrap
+    #
+    # @param [Boolean] arg
+    # @return [Boolean] arg
+    #
+    def fail_on_bootstrap(arg = nil)
+      set_or_return(:fail_on_bootstrap, arg, kind_of: [TrueClass, FalseClass])
+    end
+
+    #
     # Determine if the instance already exists.  This value is set by the
     # provider when the current resource is loaded
     #
@@ -150,6 +172,10 @@ end
 
 class Chef
   class Provider::CloudServer < Provider
+
+    require 'chef/knife/bootstrap'
+    Chef::Knife::Bootstrap.load_deps
+
     require_relative '_helper'
 
     include Cloud::Helper
@@ -216,12 +242,19 @@ class Chef
         end
       end
 
-      if correct_params?
-        Chef::Log.debug("#{new_resource} parameters up to date - skipping")
+      if correct_addresses?
+        Chef::Log.debug("#{new_resource} associated addresses up to date - skipping")
       else
-        converge_by("Update #{new_resource} parameters") do
-          # TODO: update
+        new_resource.ip_addresses.each do |addr|
+          converge_by("Associating #{addr} to #{new_resource}") do
+            current_instance.associate_address(addr)
+          end
         end
+      end
+
+      converge_by("Updating instance info for #{new_resource}") do
+        node.set['cloud'][new_resource.cloud]['instances'][new_resource.name] = convert_to_hash(current_instance)
+        node.save unless Chef::Config[:solo]
       end
     end
 
@@ -240,13 +273,58 @@ class Chef
       end
     end
 
+    #
+    # Idempotently bootstrap a cloud server with the current resource's name. If
+    # the server does not exist, it will be created. If the server does exist,
+    # it will be bootstrapped using the Chef API.
+    #
+    def action_bootstrap
+      validate_run_list!
+
+      if current_resource.exists?
+        if ridley.node.find(new_resource.name).nil?
+          converge_by("Bootstrapping #{new_resource}") do
+            hash = node['cloud']['bootstrap'].to_hash
+            mutable_hash = ::JSON.parse(hash.dup.to_json)
+
+            options = {
+              :node_name => new_resource.name,
+              :run_list => new_resource.run_list.join(',')
+            }.merge(symbolize_hash(mutable_hash))
+
+            Chef::Log.debug("Bootstrap options set to:\n#{options}\n")
+            Chef::Log.debug('Sleeping for 15 seconds before running bootstrap.')
+            sleep(15)
+
+            resp = ridley.node.bootstrap(current_instance.ip_addresses.last, options)
+            if resp.exit_code != 0
+              Chef::Log.warn(resp.stderr)
+              fail("#{new_resource} failed to bootstrap!") if new_resource.fail_on_bootstrap
+            else
+              Chef::Log.debug(resp.stdout)
+            end
+          end
+        else
+          Chef::Log.debug("#{new_resource} chef node already exists - skipping bootstrap")
+        end
+      else
+        action_create
+        action_bootstrap
+      end
+    end
+
     private
 
+    #
+    # Fog::Compute object for interacting with cloud
+    #
+    # @return [Fog::Compute]
+    #
     def compute
       begin
         require 'fog'
       rescue LoadError
-        Chef::Log.error("Missing gem 'fog'. Use the default fog_cloud recipe to install it first.")
+        Chef::Log.error("Missing gem 'fog'. Use the cloud::default recipe to install it first.")
       end
 
       if new_resource.connection
@@ -255,6 +333,23 @@ class Chef
       else
         Chef::Log.error("Missing connection attribute on #{new_resource.name}")
       end
+    end
+
+    #
+    # Ridley::Client object for interacting with Chef
+    #
+    # @return [Ridley::Client]
+    #
+    def ridley
+      begin
+        require 'ridley-connectors'
+      rescue LoadError
+        Chef::Log.error("Missing gem 'ridley-connectors'. Use the cloud::default recipe to install it first.")
+      end
+
+      connection_options = node['cloud']['bootstrap'].to_hash
+
+      @ridley ||= Ridley.new(connection_options.merge(:server_url => Chef::Config[:chef_server_url]))
     end
 
     # The current instance.
@@ -271,12 +366,15 @@ class Chef
     end
 
     #
-    # Helper method for determining if the given parameters are in sync with the
+    # Helper method for determining if any given IP addresses are in sync with the
     # current params for the cloud server.
     #
     # @return [Boolean]
     #
-    def correct_params?
+    def correct_addresses?
+      new_resource.ip_addresses.each do |addr|
+        return false if current_instance.ip_addresses.include?(addr) == false
+      end
       true
     end
 
@@ -340,7 +438,7 @@ class Chef
     def validate_security_groups!
       Chef::Log.debug "Validate #{new_resource} security groups"
 
-      if new_resource.security_groups.nil?
+      if new_resource.security_groups.empty?
         fail("#{new_resource} must specify a security group!")
       else
         new_resource.security_groups.each do |group|
@@ -357,18 +455,71 @@ class Chef
     def validate_addresses!
       Chef::Log.debug "Validate #{new_resource} IP addresses"
 
-      if new_resource.ip_addresses.nil?
+      if new_resource.ip_addresses.empty?
         Chef::Log.debug("#{new_resource} will not have a public IP.")
       else
         new_resource.ip_addresses.each do |address|
-          ip = compute.addresses.select { |addr| arrd.ip == address }.first
+          ip = compute.addresses.select { |addr| addr.ip == address }.first
           if ip.nil?
             fail("#{new_resource} IP address `#{address}` does not exist!")
-          elsif ip.instance_id
+          elsif ip.instance_id && ip.instance_id != current_instance.id
             fail("#{new_resource} IP address `#{address}` is currently in use!")
           end
         end
       end
+    end
+
+    #
+    # Validate that a run list was given as a parameter to the
+    # resource and that all objects exist on the Chef server.
+    #
+    def validate_run_list!
+      Chef::Log.debug "Validate #{new_resource} run list"
+
+      if new_resource.run_list.empty?
+        fail("#{new_resource} must specify a run list when bootstrapping!")
+      else
+        new_resource.run_list.each do |item|
+          if item.match(/(role|recipe)/).nil?
+            fail("#{new_resource} run list item `#{item}` must be either role or recipe!")
+          elsif item.match(/role/)
+            role = item.gsub('role[', '').split(']').first
+            fail("#{new_resource} run list item `#{item}` does not exist on Chef server!") if ridley.role.find(role).nil?
+          elsif item.match(/recipe/)
+            cookbook = item.gsub('recipe[', '').split(']').first.split('::').first
+            environment = ridley.environment.find(node.chef_environment)
+            if environment && environment.cookbook_versions[cookbook]
+              cookbook_version = environment.cookbook_versions[cookbook]
+            else
+              cookbook_version = 'latest'
+            end
+            fail("#{new_resource} run list item `#{item}` does not exist on Chef server!") if ridley.cookbook.find(cookbook, cookbook_version).nil?
+          end
+        end
+      end
+    end
+
+    def bootstrap_for_node
+      bootstrap = Chef::Knife::Bootstrap.new
+      bootstrap.name_args = [current_instance.ip_addresses.last]
+      bootstrap.config[:ssh_user] = bootstrap_config(:ssh_user)
+      bootstrap.config[:ssh_port] = bootstrap_config(:ssh_port)
+      bootstrap.config[:identity_file] = bootstrap_config(:identity_file)
+      bootstrap.config[:host_key_verify] = bootstrap_config(:host_key_verify)
+      bootstrap.config[:use_sudo] = true unless bootstrap_config(:ssh_user) == 'root'
+      bootstrap.config[:chef_node_name] = new_resource.name
+      bootstrap.config[:run_list] = bootstrap_config(:run_list)
+      bootstrap.config[:prerelease] = bootstrap_config(:prerelease)
+      bootstrap.config[:bootstrap_version] = bootstrap_config(:bootstrap_version)
+      bootstrap.config[:distro] = bootstrap_config(:distro)
+      bootstrap.config[:template_file] = bootstrap_config(:template_file)
+      bootstrap.config[:bootstrap_proxy] = bootstrap_config(:bootstrap_proxy)
+      bootstrap.config[:environment] = bootstrap_config(:environment)
+      bootstrap.config[:encrypted_data_bag_secret] = bootstrap_config(:encrypted_data_bag_secret)
+      bootstrap.config[:encrypted_data_bag_secret_file] = bootstrap_config(:encrypted_data_bag_secret_file)
+      Chef::Config[:knife][:hints] ||= {}
+      Chef::Config[:knife][:hints][new_resource.cloud] ||= {}
+      bootstrap_common_params(bootstrap, server.name)
     end
   end
 end
