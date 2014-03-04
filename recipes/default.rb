@@ -21,7 +21,7 @@ node.set['build-essential']['compiletime'] = true
 include_recipe 'build-essential'
 
 chef_gem 'fog'
-chef_gem 'ridley-connectors'
+chef_gem 'ridley'
 
 require 'fog'
-require 'ridley-connectors'
+require 'ridley'
