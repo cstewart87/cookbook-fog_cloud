@@ -40,7 +40,7 @@ default['cloud']['deploy_data'] = node.chef_environment
 
 default['cloud']['bootstrap'].tap do |bootstrap|
   bootstrap['client_name']       = Chef::Config[:node_name]
-  bootstrap['client_key']        = '/root/client.pem'
+  bootstrap['client_key']        = Chef::Config[:client_key]
   bootstrap['validator_path']    = Chef::Config[:validation_key]
   bootstrap['validator_client']  = Chef::Config[:validation_client_name]
   bootstrap['bootstrap_proxy']   = nil
@@ -51,7 +51,7 @@ default['cloud']['bootstrap'].tap do |bootstrap|
 end
 
 default['cloud']['knife'].tap do |knife|
-  knife['client_key']             = '/root/client.pem'
+  knife['client_key']             = Chef::Config[:client_key]
   knife['bootstrap_proxy']    = nil
   knife['bootstrap_version']  = Chef::VERSION
   knife['distro'] = nil

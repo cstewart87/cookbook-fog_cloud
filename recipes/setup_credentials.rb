@@ -34,13 +34,3 @@ file node['cloud']['bootstrap']['ssh']['keys'] do
   content deploy_data['bootstrap']['ssh_key']
   mode '0600'
 end
-
-# file node['cloud']['bootstrap']['validator_path'] do
-#   content deploy_data['bootstrap']['validation_key']
-#   mode '0600'
-# end
-
-# file node['cloud']['bootstrap']['client_key'] do
-#   content deploy_data['bootstrap']['client_key']
-#   mode '0600'
-# end
