@@ -173,8 +173,8 @@ end
 class Chef
   class Provider::CloudServer < Provider
 
-    require 'chef/knife/bootstrap'
-    Chef::Knife::Bootstrap.load_deps
+    require 'chef/mixin/shell_out'
+    include Chef::Mixin::ShellOut
 
     require_relative '_helper'
 
@@ -252,7 +252,7 @@ class Chef
         end
       end
 
-      converge_by("Updating instance info for #{new_resource}") do
+      converge_by("Update instance info for #{new_resource}") do
         node.set['cloud'][new_resource.cloud]['instances'][new_resource.name] = convert_to_hash(current_instance)
         node.save unless Chef::Config[:solo]
       end
@@ -267,6 +267,8 @@ class Chef
       if current_resource.exists?
         converge_by("Delete #{new_resource}") do
           current_instance.destroy
+          ridley.node.delete(new_resource.name)
+          ridley.client.delete(new_resource.name)
         end
       else
         Chef::Log.debug("#{new_resource} does not exist - skipping")
@@ -282,31 +284,20 @@ class Chef
       validate_run_list!
 
       if current_resource.exists?
-        if ridley.node.find(new_resource.name).nil?
-          converge_by("Bootstrapping #{new_resource}") do
-            hash = node['cloud']['bootstrap'].to_hash
-            mutable_hash = ::JSON.parse(hash.dup.to_json)
-
-            options = {
-              :node_name => new_resource.name,
-              :run_list => new_resource.run_list.join(',')
-            }.merge(symbolize_hash(mutable_hash))
-
-            Chef::Log.debug("Bootstrap options set to:\n#{options}\n")
+          converge_by("Converge #{new_resource}") do
             Chef::Log.debug('Sleeping for 15 seconds before running bootstrap.')
             sleep(15)
 
-            resp = ridley.node.bootstrap(current_instance.ip_addresses.last, options)
-            if resp.exit_code != 0
-              Chef::Log.warn(resp.stderr)
-              fail("#{new_resource} failed to bootstrap!") if new_resource.fail_on_bootstrap
+            # resp = bootstrap_for_node.run
+            bootstrap_cmd = Mixlib::ShellOut.new("knife bootstrap #{current_instance.ip_addresses.last} -N #{new_resource.name} -E #{node.chef_environment} -i #{node['cloud']['bootstrap']['ssh']['keys']} -c /etc/chef/client.rb -r #{new_resource.run_list.join('')}", :live_stream => Chef::Config[:log_location])
+            bootstrap_cmd.run_command
+            if bootstrap_cmd.exitstatus != 0
+              Chef::Log.warn(bootstrap_cmd.stderr)
+              fail("#{new_resource} failed to converge!") if new_resource.fail_on_bootstrap
             else
-              Chef::Log.debug(resp.stdout)
+              Chef::Log.debug(bootstrap_cmd.stdout)
             end
           end
-        else
-          Chef::Log.debug("#{new_resource} chef node already exists - skipping bootstrap")
-        end
       else
         action_create
         action_bootstrap
@@ -330,8 +321,11 @@ class Chef
       if new_resource.connection
         # Fog::Logger = Chef::Log unless Fog::Logger == Chef::Log
         @fog ||= Fog::Compute.new(new_resource.connection.merge(:provider => new_resource.cloud))
+      elsif ::File.exists?("#{ENV['HOME']}/.fog")
+        Fog::Logger[:warning] = Chef::Log
+        @fog ||= Fog::Compute.new(:provider => new_resource.cloud)
       else
-        Chef::Log.error("Missing connection attribute on #{new_resource.name}")
+        Chef::Log.error("Missing ~/.fog config file and connection parameter.  Use cloud::setup_credentials or add credentials to setup.")
       end
     end
 
@@ -342,14 +336,27 @@ class Chef
     #
     def ridley
       begin
-        require 'ridley-connectors'
+        require 'ridley'
       rescue LoadError
-        Chef::Log.error("Missing gem 'ridley-connectors'. Use the cloud::default recipe to install it first.")
+        Chef::Log.error("Missing gem 'ridley'. Use the cloud::default recipe to install it first.")
       end
 
       connection_options = node['cloud']['bootstrap'].to_hash
-
-      @ridley ||= Ridley.new(connection_options.merge(:server_url => Chef::Config[:chef_server_url]))
+      ridley_options = {
+        :server_url => Chef::Config[:chef_server_url],
+        :client_name => connection_options['client_name'],
+        :client_key => connection_options['client_key'],
+        :validator_client => connection_options['validator_client'],
+        :validator_path => connection_options['validator_path'],
+        :ssh => {
+          :user => connection_options['ssh']['user'],
+          :keys => connection_options['ssh']['keys']
+        }
+      }
+      Chef::Log.debug("Ridley connection options set to:\n#{ridley_options}\n")
+      Ridley::Logging.logger.level = Logger.const_get 'ERROR'
+      @ridley ||= Ridley.new(ridley_options)
+      # @ridley ||= Ridley.new(connection_options.merge(:server_url => Chef::Config[:chef_server_url]))
     end
 
     # The current instance.
@@ -502,24 +509,24 @@ class Chef
     def bootstrap_for_node
       bootstrap = Chef::Knife::Bootstrap.new
       bootstrap.name_args = [current_instance.ip_addresses.last]
-      bootstrap.config[:ssh_user] = bootstrap_config(:ssh_user)
-      bootstrap.config[:ssh_port] = bootstrap_config(:ssh_port)
-      bootstrap.config[:identity_file] = bootstrap_config(:identity_file)
-      bootstrap.config[:host_key_verify] = bootstrap_config(:host_key_verify)
-      bootstrap.config[:use_sudo] = true unless bootstrap_config(:ssh_user) == 'root'
+      bootstrap_config = node['cloud']['bootstrap']
+      bootstrap.config[:ssh_user] = bootstrap_config['ssh_user']
+      bootstrap.config[:ssh_port] = bootstrap_config['ssh_port']
+      bootstrap.config[:identity_file] = bootstrap_config['ssh']['keys']
+      bootstrap.config[:host_key_verify] = bootstrap_config['host_key_verify']
+      bootstrap.config[:use_sudo] = true unless bootstrap_config['ssh_user'] == 'root'
       bootstrap.config[:chef_node_name] = new_resource.name
-      bootstrap.config[:run_list] = bootstrap_config(:run_list)
-      bootstrap.config[:prerelease] = bootstrap_config(:prerelease)
-      bootstrap.config[:bootstrap_version] = bootstrap_config(:bootstrap_version)
-      bootstrap.config[:distro] = bootstrap_config(:distro)
-      bootstrap.config[:template_file] = bootstrap_config(:template_file)
-      bootstrap.config[:bootstrap_proxy] = bootstrap_config(:bootstrap_proxy)
-      bootstrap.config[:environment] = bootstrap_config(:environment)
-      bootstrap.config[:encrypted_data_bag_secret] = bootstrap_config(:encrypted_data_bag_secret)
-      bootstrap.config[:encrypted_data_bag_secret_file] = bootstrap_config(:encrypted_data_bag_secret_file)
+      bootstrap.config[:run_list] = new_resource.run_list.join(',')
+      bootstrap.config[:prerelease] = bootstrap_config['prerelease']
+      bootstrap.config[:bootstrap_version] = Chef::VERSION
+      bootstrap.config[:distro] = bootstrap_config['distro']
+      bootstrap.config[:template_file] = bootstrap_config['template']
+      bootstrap.config[:bootstrap_proxy] = bootstrap_config['bootstrap_proxy']
+      bootstrap.config[:environment] = node.chef_environment
       Chef::Config[:knife][:hints] ||= {}
       Chef::Config[:knife][:hints][new_resource.cloud] ||= {}
-      bootstrap_common_params(bootstrap, server.name)
+      bootstrap
     end
+
   end
 end

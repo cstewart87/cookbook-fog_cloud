@@ -1,20 +1,36 @@
 ---
 driver:
-  name: vagrant
+  name: openstack
   require_chef_omnibus: true
+  openstack_username: <%= ENV['OS_USERNAME'] %>
+  openstack_api_key:  <%= ENV['OS_PASSWORD'] %>
+  openstack_auth_url:  <%= ENV['OS_AUTH_URL'] %>/tokens
+  openstack_key_name: <%= ENV['OS_KEY_NAME'] %>
+  openstack_tenant: <%= ENV['OS_TENANT_NAME'] %>
+  key_name: <%= ENV['OS_KEY_NAME'] %>
+  public_key_path: <%= ENV['OS_KEY_FILE'] %>
+  ssh_key: <%= ENV['OS_KEY_FILE'] %>
+  security_groups:
+    - ping-and-ssh
+
 
 provisioner:
-  name: chef_zero
-  encrypted_data_bag_secret_key_path: /Users/curtstewart/.ssh/id_rsa
+  name: chef_solo
 
 platforms:
 - name: ubuntu-12.04
+  driver_config:
+    username: root
+    image_ref: 783ac78c-56f5-4a55-9330-2f1e9cccba7e
+    floating_ip_pool: public_251
+    flavor_ref: 7
+
 
 suites:
   - name: default
     run_list:
-      - recipe[build-essential::default]
       - recipe[fog_cloud::default]
+      - recipe[fog_cloud::setup_credentials]
       - recipe[fog_cloud::test]
     attributes:
       openstack_username: <%= ENV['OS_USERNAME'] %>

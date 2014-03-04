@@ -1,8 +1,9 @@
+chef_server_url "<%= Chef::Config[:chef_server_url] %>"
 <% %w{ client_key validation_key validation_client_name }.each do |cfg| %>
 <%= "#{cfg}  \"#{node['cloud']['knife'][cfg]}\"" unless node['cloud']['knife'][cfg].nil? %>
 <% end %>
 
-<% %w{ bootstrap_proxy bootstrap_vesion distro template_file identity_file
+<% %w{ bootstrap_proxy bootstrap_version distro template_file identity_file
        host_key_verify ssh_gateway ssh_password ssh_port ssh_user }.each do |cfg| %>
 <%= "knife[:#{cfg}] = \"#{node['cloud']['knife'][cfg]}\"" unless node['cloud']['knife'][cfg].nil? %>
 <% end %>

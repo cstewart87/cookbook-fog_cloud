@@ -17,6 +17,9 @@
 # limitations under the License.
 #
 
+node.set['build-essential']['compiletime'] = true
+include_recipe 'build-essential'
+
 chef_gem 'fog'
 chef_gem 'ridley-connectors'
 

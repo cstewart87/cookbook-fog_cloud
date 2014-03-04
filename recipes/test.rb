@@ -19,30 +19,15 @@
 
 cloud_server 'chef_test' do
   action [:create, :bootstrap]
-  image '72df9ffd-0a4e-46c7-9280-6f87ab302b98'
-  flavor 'm1.small.ssd'
-  security_groups %w{ default PingAndSSHDev }
+  image '920c7654-50ec-4a76-98d1-288c554a7ec3'
+  flavor 'm1.small'
+  security_groups %w{ ping-and-ssh }
   keypair 'cstewart'
-  ip_addresses %w{
-    172.31.251.3
-  }
   run_list %w{
-    recipe[build-essential]
+    recipe[apt]
   }
-  connection(
-    :openstack_auth_url => node[:openstack_auth_url],
-    :openstack_username => node[:openstack_username],
-    :openstack_api_key => node[:openstack_api_key],
-    :openstack_tenant => node[:openstack_tenant]
-  )
 end
 
 # cloud_server 'chef_test' do
 #   action :destroy
-#   connection(
-#     :openstack_auth_url => node[:openstack_auth_url],
-#     :openstack_username => node[:openstack_username],
-#     :openstack_api_key => node[:openstack_api_key],
-#     :openstack_tenant => node[:openstack_tenant]
-#   )
 # end
