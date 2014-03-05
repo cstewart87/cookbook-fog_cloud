@@ -265,13 +265,29 @@ class Chef
     #
     def action_destroy
       if current_resource.exists?
-        converge_by("Delete #{new_resource}") do
+        converge_by("Delete #{new_resource} and update attributes") do
           current_instance.destroy
+          node.set['cloud'][new_resource.cloud]['instances'][new_resource.name] = nil
+          node.save unless Chef::Config[:solo]
           ridley.node.delete(new_resource.name)
           ridley.client.delete(new_resource.name)
         end
       else
-        Chef::Log.debug("#{new_resource} does not exist - skipping")
+        node_obj = ridley.node.find(new_resource.name)
+        client_obj = ridley.client.find(new_resource.name)
+        if node_obj
+          converge_by("Remove left over object node[#{new_resource.name}") do
+            ridley.node.delete(new_resource.name)
+          end
+        end
+        if client_obj
+          converge_by("Remove left over object client[#{new_resource.name}") do
+            ridley.client.delete(new_resource.name)
+          end
+        end
+        unless node_obj || client_obj
+          Chef::Log.debug("#{new_resource} does not exist - skipping")
+        end
       end
     end
 
@@ -531,3 +547,4 @@ class Chef
 
   end
 end
+  
