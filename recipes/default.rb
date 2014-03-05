@@ -17,22 +17,8 @@
 # limitations under the License.
 #
 
-node.set['build-essential']['compiletime'] = true
+node.set['build_essential']['compiletime'] = true
 include_recipe 'build-essential'
-
-if platform_family?('debian')
-  %w{ libxml2-dev libxslt-dev libpq-dev }.each do |pkg|
-    package pkg do
-      action :nothing
-    end.run_action(:install)
-  end
-else
-  %w{ libxml2-devel libxslt-devel }.each do |pkg|
-    package pkg do
-      action :nothing
-    end.run_action(:install)
-  end
-end
 
 chef_gem 'fog'
 chef_gem 'ridley'
