@@ -24,12 +24,6 @@ else
   deploy_data = chef_vault_item(:cloud, node['cloud']['deploy_data'])
 end
 
-template "#{ENV['HOME']}/.fog" do
-  variables(
-    :data => deploy_data['cloud']
-  )
-end
-
 file node['cloud']['bootstrap']['ssh']['keys'] do
   content deploy_data['bootstrap']['ssh_key']
   mode '0600'
