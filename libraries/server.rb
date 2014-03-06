@@ -306,7 +306,7 @@ class Chef
 
             puts "\n\n" # Bootstrap output gets appended to current STDOUT line
             
-            bootstrap_cmd = Mixlib::ShellOut.new("knife bootstrap #{current_instance.ip_addresses.last} -N #{new_resource.name} -E #{node.chef_environment} -i #{node['cloud']['bootstrap']['ssh']['keys']} -c /etc/chef/client.rb -r #{new_resource.run_list.join('')}", :live_stream => Chef::Config[:log_location])
+            bootstrap_cmd = Mixlib::ShellOut.new("knife bootstrap #{current_instance.ip_addresses.last} -N #{new_resource.name} -E #{node.chef_environment} -i #{node['cloud']['bootstrap']['ssh']['keys']} -c /etc/chef/client.rb -r \'#{new_resource.run_list.join(',')}\'", :live_stream => Chef::Config[:log_location])
             bootstrap_cmd.run_command
             if bootstrap_cmd.exitstatus != 0
               Chef::Log.warn(bootstrap_cmd.stderr)
